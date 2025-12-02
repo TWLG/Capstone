@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Remote Motor Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 700px;
+      margin: 2rem auto;
+      padding: 1rem;
+      background: #0b0c10;
+      color: #eee;
+    }
+    h1 {
+      margin-bottom: 0.25rem;
+    }
+    .sub {
+      font-size: 0.85rem;
+      color: #aaa;
+      margin-bottom: 1.5rem;
+    }
+    .card {
+      background: #15171f;
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 0 0 1px rgba(255,255,255,0.02);
+    }
+    label {
+      font-size: 0.9rem;
+      display: block;
+      margin-bottom: 0.3rem;
+    }
+    input[type="number"] {
+      padding: 0.3rem 0.4rem;
+      border-radius: 4px;
+      border: 1px solid #333;
+      background: #11131a;
+      color: #eee;
+      width: 120px;
+    }
+    button {
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      border: none;
+      background: #2d7dff;
+      color: #fff;
+      font-size: 0.9rem;
+      cursor: pointer;
+      margin: 0.2rem 0.2rem 0 0;
+    }
+    button.secondary {
+      background: #353b4a;
+    }
+    button.danger {
+      background: #d9534f;
+    }
+    button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      margin-right: 0.4rem;
+      background: #777;
+    }
+    .status-dot.online {
+      background: #4caf50;
+    }
+    .status-dot.offline {
+      background: #f44336;
+    }
+    .status-dot.connecting {
+      background: #ff9800;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.85rem;
+    }
+    pre {
+      background: #050608;
+      padding: 0.6rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      max-height: 250px;
+      white-space: pre-wrap;
+    }
+    small {
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <h1>Remote Motor Control</h1>
+  <div class="sub">
+    <span id="conn-dot" class="status-dot offline"></span>
+    <span id="conn-text">Disconnected</span>
+  </div>
+
+  <div class="card">
+    <div class="row" style="margin-bottom:0.5rem;">
+      <div>
+        <label for="deviceId">Device ID</label>
+        <input id="deviceId" value="pi-motor-1" style="padding:0.3rem 0.4rem;border-radius:4px;border:1px solid #333;background:#11131a;color:#eee;width:160px;">
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button type="button" class="secondary" onclick="reconnect()">Reconnect</button>
+      </div>
+    </div>
+    <small>Uses <code>wss://&lt;host&gt;/ws/?role=ui&deviceId=...</code></small>
+  </div>
+
+  <div class="card">
+    <label for="intervalUs">Pulse interval (µs) 200-4000 lower is faster</label>
+    <div class="row">
+      <input type="number" id="intervalUs" min="200" max="4000" step="1" value="800" />
+      <button type="button" onclick="setSpeed()">Set speed</button>
+    </div>
+    <small><span id="spsLabel">1250</span> steps / second</small>
+  </div>
+
+  <div class="card">
+    <strong>Run Control</strong><br /><br />
+    <button type="button" onclick="startMotor()">Start</button>
+    <button type="button" class="danger" onclick="stopMotor()">Stop</button>
+  </div>
+
+  <div class="card">
+    <strong>Power (ENA)</strong><br /><br />
+    <button type="button" onclick="setPower(true)">Power ON</button>
+    <button type="button" class="secondary" onclick="setPower(false)">Power OFF</button>
+  </div>
+
+  <div class="card">
+    <strong>Direction</strong><br /><br />
+    <button type="button" onclick="setDir(1)">CW</button>
+    <button type="button" class="secondary" onclick="setDir(0)">CCW</button>
+  </div>
+
+  <div class="card mono">
+    <strong>Latest State</strong>
+    <pre id="stateBox">{}</pre>
+    <small id="stateMeta">No state received yet</small>
+  </div>
+
+  <div class="card mono">
+    <strong>Log</strong>
+    <pre id="logBox"></pre>
+  </div>
+
+  <script>
+    let socket = null;
+    let lastState = null;
+
+    function wsUrl() {
+      const devId = document.getElementById('deviceId').value.trim() || 'pi-motor-1';
+      const proto = (location.protocol === 'https:') ? 'wss://' : 'ws://';
+      return proto + location.host + '/ws/?role=ui&deviceId=' + encodeURIComponent(devId);
+    }
+
+    function log(msg) {
+      const box = document.getElementById('logBox');
+      const ts = new Date().toISOString().split('T')[1].replace('Z','');
+      box.textContent = `[${ts}] ${msg}\n` + box.textContent;
+    }
+
+    function setStatus(state, text) {
+      const dot = document.getElementById('conn-dot');
+      const t = document.getElementById('conn-text');
+      dot.classList.remove('online','offline','connecting');
+      dot.classList.add(state);
+      t.textContent = text;
+    }
+
+    function updateSpsLabel(us) {
+      if (!us || typeof us !== 'number') return;
+      const sps = Math.round(1000000 / us);
+      document.getElementById('spsLabel').textContent = sps;
+    }
+
+    function connect() {
+      if (socket) {
+        try { socket.close(); } catch (e) {}
+        socket = null;
+      }
+
+      const url = wsUrl();
+      log('Connecting to ' + url);
+      setStatus('connecting', 'Connecting...');
+
+      socket = new WebSocket(url);
+
+      socket.onopen = () => {
+        log('WebSocket connected');
+        setStatus('online', 'Connected');
+      };
+
+      socket.onclose = (ev) => {
+        log('WebSocket closed (code ' + ev.code + ')');
+        setStatus('offline', 'Disconnected');
+      };
+
+      socket.onerror = (err) => {
+        log('WebSocket error');
+        // more detail may be in console
+      };
+
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          handleMessage(msg);
+        } catch (e) {
+          log('Bad JSON from server: ' + event.data);
+        }
+      };
+    }
+
+    function reconnect() {
+      connect();
+    }
+
+    function sendCommand(action, value) {
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        alert('Not connected to server');
+        return;
+      }
+      const devId = document.getElementById('deviceId').value.trim() || 'pi-motor-1';
+      const msg = {
+        type: 'command',
+        deviceId: devId,
+        payload: { action, value }
+      };
+      log('SEND ' + JSON.stringify(msg));
+      socket.send(JSON.stringify(msg));
+    }
+
+    function handleMessage(msg) {
+      log('RECV ' + JSON.stringify(msg));
+      if (msg.type === 'state' && msg.payload) {
+        lastState = msg.payload;
+        const box = document.getElementById('stateBox');
+        box.textContent = JSON.stringify(msg, null, 2);
+        const meta = document.getElementById('stateMeta');
+        meta.textContent = 'Last update: ' + new Date().toLocaleTimeString();
+
+        if (typeof msg.payload.intervalUs === 'number') {
+          const input = document.getElementById('intervalUs');
+          input.value = msg.payload.intervalUs;
+          updateSpsLabel(msg.payload.intervalUs);
+        }
+      }
+    }
+
+    // UI event helpers
+    function startMotor() {
+      const us = parseInt(document.getElementById('intervalUs').value, 10);
+      if (isNaN(us) || us < 200 || us > 4000) {
+        alert('Enter a value between 200 and 4000 µs');
+        return;
+      }
+      updateSpsLabel(us);
+      sendCommand('START', us);
+    }
+
+    function stopMotor() {
+      sendCommand('STOP');
+    }
+
+    function setPower(on) {
+      sendCommand('ENA', on ? 1 : 0);
+    }
+
+    function setDir(dir) {
+      sendCommand('DIR', dir ? 1 : 0);
+    }
+
+    function setSpeed() {
+      const us = parseInt(document.getElementById('intervalUs').value, 10);
+      if (isNaN(us) || us < 200 || us > 4000) {
+        alert('Enter a value between 200 and 4000 µs');
+        return;
+      }
+      updateSpsLabel(us);
+      sendCommand('SET_SPEED', us);
+    }
+
+    // initial connect
+    connect();
+  </script>
+</body>
+</html>
