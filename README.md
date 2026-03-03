@@ -49,7 +49,7 @@ node pi_controller.js
 ```
 - The Pi serves a local control UI at http://localhost:3000 and forwards commands to the Arduino. See [`VPS_WS_URL`](pi_controller.js) and [`pi_controller.js`](pi_controller.js).
 
-3) VPS: Nginx, Certbot, serve frontend
+3) VPS: Nginx, Certbot, server frontend
 - Copy `nginx_config.txt` to your VPS (e.g. `/etc/nginx/sites-available/motor.conf`) and adjust `server_name` and paths.
 - Obtain TLS certificates with Certbot (choose nginx / your OS at https://certbot.eff.org/).
 - Place `motor.html` under your web root (e.g. `/var/www/html/motor.html`).
