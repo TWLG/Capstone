@@ -15,7 +15,7 @@ Covers hardware wiring, CL57T driver configuration, Arduino setup, Raspberry Pi 
 ## Hardware Used
 
 - Arduino UNO R4 WiFi — USB serial, 5 V logic output to CL57T
-- CL57T closed-loop stepper driver — 5 V signal mode, SW1–3 OFF (400 pulses/rev)
+- CL57T closed-loop stepper driver — 5 V signal mode, SW1–3 ON (1000 pulses/rev)
 - NEMA 24 closed-loop stepper motor
 - Raspberry Pi 5 (Wi-Fi) — Node.js bridge between Arduino and VPS
 - VPS with Nginx + TLS — WebSocket relay and frontend host
@@ -51,7 +51,7 @@ The relay (`server.js`) is many-to-many in both directions — multiple Pis and 
 | `ENA <0\|1>` | Enable/disable driver (active-LOW) |
 | `SET_SPEED <us>` | Update speed while running |
 
-Pulse interval range: 200–4000 µs (lower = faster). At 400 pulses/rev: 800 µs ≈ 1,250 steps/sec.
+Pulse interval range: 200–4000 µs (lower = faster). At 1000 pulses/rev: 800 µs ≈ 1,250 steps/sec.
 
 ## Contributing
 

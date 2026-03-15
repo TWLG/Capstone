@@ -354,10 +354,14 @@
     </thead>
     <tbody>
       <tr><td>Signal voltage mode</td><td>5 V</td><td>Matches the Arduino UNO R4's 5 V logic output. If your board outputs 3.3 V, switch to the appropriate mode.</td></tr>
-      <tr><td>SW1</td><td>DOWN (OFF)</td><td rowspan="3">SW1–SW3 all OFF = 400 pulses/revolution. Adjust the pulse interval in the UI to match your chosen resolution.</td></tr>
-      <tr><td>SW2</td><td>DOWN (OFF)</td></tr>
-      <tr><td>SW3</td><td>DOWN (OFF)</td></tr>
-      <tr><td>SW4–SW6</td><td>Set per motor</td><td>Peak current — refer to the CL57T manual and your motor's rated current. Do not exceed the motor's specification.</td></tr>
+      <tr><td>SW1</td><td>UP (ON)</td><td rowspan="3">SW1–SW3 all ON = 1000 pulses/revolution. Adjust the pulse interval in the UI to match your chosen resolution.</td></tr>
+      <tr><td>SW2</td><td>UP (ON)</td></tr>
+      <tr><td>SW3</td><td>UP (ON)</td></tr>
+      <tr><td>SW4</td><td>DOWN (OFF)</td><td rowspan="5">SW4–SW8 all OFF — refer to the CL57T manual's switch table to confirm the current setting this corresponds to for your specific motor. Do not exceed the motor's rated current.</td></tr>
+      <tr><td>SW5</td><td>DOWN (OFF)</td></tr>
+      <tr><td>SW6</td><td>DOWN (OFF)</td></tr>
+      <tr><td>SW7</td><td>DOWN (OFF)</td></tr>
+      <tr><td>SW8</td><td>DOWN (OFF)</td></tr>
     </tbody>
   </table>
 
@@ -369,8 +373,8 @@
   </div>
 
   <div class="tip">
-    <strong>&#128161; 400 pulses/rev at SW1–3 all OFF</strong><br>
-    At this setting a full motor revolution requires 400 pulses from the Arduino.
+    <strong>&#128161; 1000 pulses/rev at SW1–3 all ON</strong><br>
+    At this setting a full motor revolution requires 1000 pulses from the Arduino.
     If you use a different microstep setting, the motor will move more or fewer degrees per pulse —
     compensate by adjusting the pulse interval in the UI rather than changing the sketch.
     Refer to the CL57T manual's switch table for all resolution options.
