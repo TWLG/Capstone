@@ -124,6 +124,11 @@ pre {
 
 code {
     font-family: monospace;
+    font-weight: 600;
+    background: #ebebeb;
+    padding: 1px 4px;
+    border-radius: 3px;
+    font-size: 0.9em;
 }
 
 
