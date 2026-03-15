@@ -1,5 +1,3 @@
-https://twlg.github.io/Capstone/
-
 # Remote Stepper Motor Control (Arduino + Raspberry Pi + VPS + WebSockets)
 
 End-to-end self-hosted IoT pipeline for remote stepper motor control over the public internet via WebSockets — no proprietary cloud platform required.
