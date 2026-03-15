@@ -1,67 +1,58 @@
 # Remote Stepper Motor Control (Arduino + Raspberry Pi + VPS + WebSockets)
 
-Small end-to-end example for remote motor control over the public internet.
+End-to-end self-hosted IoT pipeline for remote stepper motor control over the public internet via WebSockets — no proprietary cloud platform required.
 
-Components
-- Arduino UNO R4 Wi‑Fi + CL57T stepper driver + NEMA 24 closed‑loop stepper
-- Raspberry Pi (bridge: USB serial ⇄ WebSocket)
-- VPS (Node.js WebSocket relay, Nginx, TLS via Let’s Encrypt)
-- HTML/JS frontend served from the VPS over HTTPS
+## Full Tutorial
 
-High level flow
-Browser UI ⇄ wss://your-domain/ws (VPS) ⇄ Raspberry Pi ⇄ USB Serial ⇄ Arduino ⇄ Stepper driver
+For complete step-by-step assembly and setup instructions, see the project tutorial page:
 
-Repository layout (recommended)
+**[https://twlg.github.io/Capstone/](https://twlg.github.io/Capstone/)**
+
+Covers hardware wiring, CL57T driver configuration, Arduino setup, Raspberry Pi bridge setup, VPS/Nginx/TLS configuration, and using the browser UI.
+
+---
+
+## Hardware Used
+
+- Arduino UNO R4 WiFi — USB serial, 5 V logic output to CL57T
+- CL57T closed-loop stepper driver — 5 V signal mode, SW1–3 OFF (400 pulses/rev)
+- NEMA 24 closed-loop stepper motor
+- Raspberry Pi 5 (Wi-Fi) — Node.js bridge between Arduino and VPS
+- VPS with Nginx + TLS — WebSocket relay and frontend host
+
+## System Flow
+
+```
+Browser UI(s)  ⇄  wss://host/ws (VPS + Nginx)  ⇄  Raspberry Pi  ⇄  USB-C Serial  ⇄  Arduino  ⇄  CL57T  ⇄  NEMA 24
+```
+
+The relay (`server.js`) is many-to-many in both directions — multiple Pis and multiple browser UIs can connect simultaneously. Switch between devices in the UI by changing the Device ID.
+
+## Repository Layout
+
 ```
 .
 ├── a_DRIVER/
-│   └── a_DRIVER.ino
-├── pi_controller.js
-├── server.js
-├── nginx_config.txt
-└── motor.html
+│   └── a_DRIVER.ino       # Arduino sketch — serial command parser + stepper pulse generation
+├── pi_controller.js        # Raspberry Pi bridge — USB serial ⇄ VPS WebSocket + local UI on :3000
+├── server.js               # VPS WebSocket relay — routes state and command messages
+├── nginx_config.txt        # Nginx config — HTTPS, WebSocket proxy, basic auth
+├── motor.html              # Browser frontend — served from VPS over HTTPS
+└── docs/                   # GitHub Pages tutorial site
 ```
 
-Quick setup guide
+## Serial Commands (Arduino, 115200 baud)
 
-1) Arduino (UNO R4 Wi‑Fi)
-- Open the Arduino IDE and install the LED matrix library referenced at the top of [`a_DRIVER/a_DRIVER.ino`](a_DRIVER/a_DRIVER.ino).
-- Open and upload [`a_DRIVER/a_DRIVER.ino`](a_DRIVER/a_DRIVER.ino) to the Arduino (board: "Arduino Uno R4 WiFi", baud: 115200).
-- The sketch listens for USB serial lines handled by [`handleSerialLine`](a_DRIVER/a_DRIVER.ino). Commands include:
-  - `START <us>` — start pulses with interval in microseconds
-  - `STOP`
-  - `DIR <0|1>`
-  - `ENA <0|1>`
-  - `SET_SPEED <us>`
+| Command | Description |
+|---|---|
+| `START <us>` | Start motor at pulse interval in microseconds |
+| `STOP` | Stop motor |
+| `DIR <0\|1>` | Set direction (1 = CW, 0 = CCW) |
+| `ENA <0\|1>` | Enable/disable driver (active-LOW) |
+| `SET_SPEED <us>` | Update speed while running |
 
-2) Raspberry Pi (Pi → Arduino bridge)
-- Install Node and dependencies on the Pi:
-```sh
-sudo apt update
-sudo apt-get install -y nodejs npm
-cd /path/to/Capstone
-npm install ws serialport express
-```
-- Edit `pi_controller.js` to set the correct serial port (`SERIAL_PORT`) and the VPS URL (`VPS_WS_URL`).
-- Start the bridge:
-```sh
-node pi_controller.js
-```
-- The Pi serves a local control UI at http://localhost:3000 and forwards commands to the Arduino. See [`VPS_WS_URL`](pi_controller.js) and [`pi_controller.js`](pi_controller.js).
+Pulse interval range: 200–4000 µs (lower = faster). At 400 pulses/rev: 800 µs ≈ 1,250 steps/sec.
 
-3) VPS: Nginx, Certbot, server frontend
-- Copy `nginx_config.txt` to your VPS (e.g. `/etc/nginx/sites-available/motor.conf`) and adjust `server_name` and paths.
-- Obtain TLS certificates with Certbot (choose nginx / your OS at https://certbot.eff.org/).
-- Place `motor.html` under your web root (e.g. `/var/www/html/motor.html`).
+## Contributing
 
-4) VPS: WebSocket relay
-- On the VPS, install Node and start the relay:
-```sh
-npm install ws
-node server.js
-```
-- `server.js` listens for device connections and UI clients and forwards `state` and `command` messages. See [`server.js`](server.js).
-
-Notes and ranges
-- Pulse interval: 200–4000 µs (lower = faster).
-- UI uses `wss://<host>/ws/?role=ui&deviceId=...`. The Pi device connects with `?role=device&deviceId=...`.
+Pull requests are welcome. See the tutorial page for context on how the system works before submitting changes.
