@@ -170,6 +170,7 @@
       <li><a href="#vps">VPS Setup (Nginx, TLS, WebSocket Relay)</a></li>
       <li><a href="#frontend">Deploy the Frontend UI</a></li>
       <li><a href="#using">Using the System</a></li>
+      <li><a href="#future">Future Improvements</a></li>
       <li><a href="#contributing">Contributing</a></li>
     </ol>
   </div>
@@ -690,6 +691,21 @@ sudo htpasswd -c /etc/nginx/.motor_passwd your-username</code></pre>
     </tbody>
   </table>
 
+  <h3>What a Successful Run Looks Like</h3>
+  <p>
+    Once everything is connected and running, open the UI and confirm the status dot is green.
+    Click <strong>Start</strong> — the motor will begin spinning and, given the size of a NEMA 24, you will hear it clearly.
+    The sound is a good immediate indicator: a steady hum or whir means the driver is receiving pulses correctly.
+    From there, try adjusting the pulse interval and clicking <strong>Set speed</strong> — you should hear the motor
+    speed up or slow down in response. Clicking <strong>CW / CCW</strong> reverses direction.
+    The <em>Latest State</em> box at the bottom of the UI updates in real time to confirm what the Pi has applied.
+  </p>
+
+  <div class="diagram">
+    <img src="images/motor_html.png" alt="Screenshot of the motor.html browser UI" />
+    <p class="caption">Figure 5 — The browser UI (motor.html) connected and controlling the motor</p>
+  </div>
+
   <h3>Shutdown Order</h3>
   <ol>
     <li>Click <strong>Stop</strong> in the UI to disable the driver before cutting power.</li>
@@ -703,6 +719,23 @@ sudo htpasswd -c /etc/nginx/.motor_passwd your-username</code></pre>
     Cutting the DC supply while the motor is actively stepping can cause voltage spikes that damage the driver.
     Always click Stop first, confirm the motor has halted, then remove power.
   </div>
+</section>
+
+
+<!-- FUTURE WORK -->
+<section id="future">
+  <h2>Future Improvements</h2>
+  <p>
+    The current system is a working proof of concept. If the project grows, here are natural areas to build on:
+  </p>
+  <ul>
+    <li><strong>Proper authentication</strong> — HTTP basic auth is a minimal barrier. A token-based or session-based auth layer on the WebSocket relay would be more robust, especially if multiple users or devices are involved.</li>
+    <li><strong>Multi-device dashboard</strong> — the relay already supports multiple connected Pis, but the current UI targets one device at a time. A dashboard view showing all connected devices and their states simultaneously would make the many-to-many capability more practical.</li>
+    <li><strong>Persistent state and logging</strong> — the relay currently holds no state between connections. Adding a lightweight database or log would let you review command history, detect faults, or replay sequences.</li>
+    <li><strong>Different actuator types</strong> — the command scheme (START, STOP, DIR, ENA, SET_SPEED over serial) is simple enough to adapt to other hardware. Any microcontroller that can parse the same serial protocol could control a different motor, relay, or actuator through the same relay without changes to the VPS or Pi code.</li>
+    <li><strong>Closed-loop feedback to the UI</strong> — the encoder on the NEMA 24 is used by the CL57T internally, but encoder position data is not currently surfaced to the browser. Passing encoder counts back through the chain would enable position tracking in the UI.</li>
+    <li><strong>Systemd service hardening</strong> — running <code>pi_controller.js</code> and <code>server.js</code> as proper systemd services with restart policies, logging to journald, and watchdog timers would make the system more reliable for long-running or unattended use.</li>
+  </ul>
 </section>
 
 
