@@ -123,8 +123,20 @@
 <section class="hero">
   <h2>Build Your Own Remote Stepper Motor Controller</h2>
   <p>
-    This tutorial walks you through replicating a self-hosted IoT system that controls a NEMA 24 stepper motor
-    from any browser over the public internet.
+    Most smart devices today depend on manufacturer cloud services to function. When those services are
+    discontinued — or the company stops supporting the hardware — the device becomes useless, contributing
+    to a growing cycle of e-waste and leaving users with no control over hardware they own.
+  </p>
+  <p>
+    This project, developed as a master's capstone at the University of North Carolina Wilmington, demonstrates
+    an alternative: a fully self-hosted IoT control pipeline built from off-the-shelf components and open code,
+    with no particular reliance on any third-party platform. The goal is to show that real-time remote device control
+    over the public internet is achievable without proprietary ecosystems — and to make that architecture
+    reproducible by anyone with the hardware and the motivation to build it.
+  </p>
+  <p>
+    This tutorial walks you through assembling and running the system yourself, from wiring the hardware
+    to controlling a NEMA 24 stepper motor from a browser anywhere in the world.
   </p>
 </section>
 
@@ -132,7 +144,8 @@
 <section id="overview">
   <h2>How It Works</h2>
   <p>
-    A browser-based frontend connects over secure WebSockets to a relay server running on a VPS (Virtual Private Server).
+    A browser-based frontend connects over secure WebSockets to a relay server running on a publicly reachable Linux server —
+    a VPS (Virtual Private Server) or a private machine with a public IP both work.
     The relay forwards commands to a Raspberry Pi, which translates them into a compact serial protocol and sends them
     to an Arduino over USB. The Arduino drives a stepper motor through a CL57T driver.
     The specific hardware used here was chosen for availability — the architecture itself is not tied to any of these
@@ -167,7 +180,7 @@
       <li><a href="#hardware">Hardware Assembly &amp; Wiring</a></li>
       <li><a href="#arduino">Arduino Setup</a></li>
       <li><a href="#pi">Raspberry Pi Setup</a></li>
-      <li><a href="#vps">VPS Setup (Nginx, TLS, WebSocket Relay)</a></li>
+      <li><a href="#vps">Server Setup (Nginx, TLS, WebSocket Relay)</a></li>
       <li><a href="#frontend">Deploy the Frontend UI</a></li>
       <li><a href="#using">Using the System</a></li>
       <li><a href="#future">Future Improvements</a></li>
@@ -202,7 +215,7 @@
       <tr><td>DC Power Supply for Driver</td><td>Voltage and current must match your specific driver and motor — check their datasheets. The CL57T accepts 24–80 V DC.</td></tr>
       <tr><td>USB-C to USB-C cable</td><td>Used to connect the Arduino UNO R4 WiFi to the Raspberry Pi 5 — both use USB-C. If your board or SBC uses a different connector (e.g. USB-B on older Arduinos, USB-A on older Pis), use the cable that matches.</td></tr>
       <tr><td>Jumper wires (male-to-male)</td><td>For the three low-voltage signal lines (PUL/DIR/ENA) from Arduino to driver.</td></tr>
-      <tr><td>VPS / cloud server</td><td>Any Linux VPS with a public IP. A domain name is not required — a bare IP address works fine. A domain was used here (twlg.net) purely for convenience. If you only need LAN control, a VPS is not required at all — the Pi's local server on port 3000 works standalone.</td></tr>
+      <tr><td>Linux server with a public IP</td><td>A VPS or a private server machine both work — anything running Linux with a reachable public IP. A domain name is not required; a bare IP works fine. A domain was used here (twlg.net) purely for convenience. If you only need LAN control, no public server is needed at all — the Pi's local server on port 3000 works standalone.</td></tr>
     </tbody>
   </table>
 
@@ -533,9 +546,10 @@ Local control UI at http://localhost:3000</code></pre>
 
 <!-- VPS SETUP -->
 <section id="vps">
-  <h2>5 — VPS Setup (Nginx, TLS, WebSocket Relay)</h2>
+  <h2>5 — Server Setup (Nginx, TLS, WebSocket Relay)</h2>
 
-  <p>The VPS hosts the WebSocket relay (<code>server.js</code>) and the frontend UI (<code>motor.html</code>).
+  <p>Your server — whether a VPS or a private machine — hosts the WebSocket relay (<code>server.js</code>) and
+  the frontend UI (<code>motor.html</code>). It just needs to be running Linux with a public IP.
   Nginx acts as a reverse proxy, handles TLS termination, and enforces HTTPS.</p>
 
   <h3><span class="step-number">1</span> Install Nginx and Node.js on the VPS</h3>

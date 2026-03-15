@@ -18,7 +18,7 @@ Covers hardware wiring, CL57T driver configuration, Arduino setup, Raspberry Pi 
 - CL57T closed-loop stepper driver — 5 V signal mode, SW1–3 ON (1000 pulses/rev)
 - NEMA 24 closed-loop stepper motor
 - Raspberry Pi 5 (Wi-Fi) — Node.js bridge between Arduino and VPS
-- VPS with Nginx + TLS — WebSocket relay and frontend host
+- Linux server with public IP (VPS or private machine) — Nginx + TLS, WebSocket relay and frontend host
 
 ## System Flow
 
