@@ -1,24 +1,735 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TWLG.net Capstone</title>
-    <link rel="stylesheet" href="style.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Remote Motor Control — Build Tutorial</title>
+<link rel="stylesheet" href="styles.css">
+<style>
+  .warning {
+    background: #fff3cd;
+    border-left: 4px solid #e6a817;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 14px 0;
+  }
+  .warning strong {
+    color: #7d4e00;
+  }
+  .danger {
+    background: #fde8e8;
+    border-left: 4px solid #d9534f;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 14px 0;
+  }
+  .danger strong {
+    color: #8b0000;
+  }
+  .tip {
+    background: #e8f4fd;
+    border-left: 4px solid #2d7dff;
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 14px 0;
+  }
+  .step-number {
+    display: inline-block;
+    background: #1f2933;
+    color: #fff;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    text-align: center;
+    line-height: 28px;
+    font-weight: bold;
+    margin-right: 8px;
+    font-size: 0.9rem;
+  }
+  .parts-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 14px;
+  }
+  .parts-table th {
+    background: #1f2933;
+    color: #fff;
+    padding: 8px 12px;
+    text-align: left;
+  }
+  .parts-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e5e5e5;
+  }
+  .parts-table tr:nth-child(even) td {
+    background: #f3f3f3;
+  }
+  .toc {
+    background: #f3f3f3;
+    border-radius: 4px;
+    padding: 16px 20px;
+    margin-bottom: 40px;
+  }
+  .toc h3 {
+    margin-bottom: 10px;
+    margin-top: 0;
+  }
+  .toc ol {
+    padding-left: 20px;
+    margin: 0;
+  }
+  .toc li {
+    margin-bottom: 4px;
+  }
+  .toc a {
+    color: #1f2933;
+    text-decoration: none;
+  }
+  .toc a:hover {
+    text-decoration: underline;
+  }
+  .arch-flow {
+    font-family: monospace;
+    font-size: 0.92rem;
+    background: #1f2933;
+    color: #7ec8e3;
+    padding: 14px 18px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin: 14px 0;
+    white-space: pre;
+  }
+  .cmd-label {
+    font-size: 0.8rem;
+    color: #888;
+    margin-top: 6px;
+    margin-bottom: 2px;
+  }
+</style>
 </head>
 
 <body>
 
 <header>
-    <h1>Capstone</h1>
-    <nav>
-        <a href="https://twlg.net">Home</a>
-    </nav>
+  <h1>Remote Motor Control — Build Tutorial</h1>
+  <nav>
+    <a href="https://twlg.net">Home</a>
+  </nav>
 </header>
 
 <main>
-    <section class="hero">
+
+<!-- INTRODUCTION -->
+<section class="hero">
+  <h2>Build Your Own Remote Stepper Motor Controller</h2>
+  <p>
+    This tutorial walks you through replicating a self-hosted IoT system that controls a NEMA 24 stepper motor
+    from any browser over the public internet — no cloud platform required.
+    The system was built as a master's capstone project at the University of North Carolina Wilmington,
+    demonstrating a transparent, modular alternative to proprietary smart-device ecosystems.
+  </p>
+</section>
+
+<!-- SYSTEM OVERVIEW -->
+<section id="overview">
+  <h2>How It Works</h2>
+  <p>
+    A browser-based frontend connects over secure WebSockets to a relay server running on a VPS (Virtual Private Server).
+    The relay forwards commands to a Raspberry Pi, which translates them into a compact serial protocol and sends them
+    to an Arduino over USB. The Arduino drives a stepper motor through a CL57T driver.
+    The specific hardware used here was chosen for availability — the architecture itself is not tied to any of these
+    particular components, and substitutions are straightforward if you understand what each piece is doing.
+  </p>
+  <p>
+    The split between the Pi and the Arduino is intentional and worth understanding before building.
+    The Raspberry Pi's GPIO pins operate at <strong>3.3 V</strong>, which is insufficient to directly drive the CL57T's
+    optocoupler inputs in 5 V mode without additional circuitry (a level shifter or resistor network).
+    The Arduino UNO R4, on the other hand, outputs <strong>5 V logic</strong> and is dedicated entirely to generating
+    precise step pulses — a timing-critical task. Attempts to have the Arduino also manage a WebSocket or network
+    connection while pulsing were unsuccessful: being single-core, it could not reliably balance network handling
+    with the microsecond-level pulse timing the driver requires. The Pi handles all networking; the Arduino handles
+    all motor timing. Each does one job well.
+  </p>
+  <p>
+    Because <code>server.js</code> runs continuously and independently on the VPS, connections are fully asynchronous —
+    the Pi and the browser UI connect and disconnect on their own schedules. This also means the design scales to
+    <strong>multiple devices</strong>: each Raspberry Pi registers with a unique <code>deviceId</code>, and any
+    browser UI can target any connected device by selecting that ID. Multiple UIs can monitor the same device simultaneously.
+  </p>
+  <div class="arch-flow">Browser UI(s) ↔  wss://your-domain/ws (VPS + Nginx)  ↔  Raspberry Pi(s)  ↔  USB Serial  ↔  Arduino UNO R4  ↔  CL57T Driver  ↔  NEMA 24 Motor</div>
+  <div class="diagram">
+    <img src="images/component_overview.png" alt="System component overview diagram" />
+    <p class="caption">Figure 1 — Full system component overview</p>
+  </div>
+
+  <div class="toc">
+    <h3>Table of Contents</h3>
+    <ol>
+      <li><a href="#parts">Parts &amp; Software You Need</a></li>
+      <li><a href="#hardware">Hardware Assembly &amp; Wiring</a></li>
+      <li><a href="#arduino">Arduino Setup</a></li>
+      <li><a href="#pi">Raspberry Pi Setup</a></li>
+      <li><a href="#vps">VPS Setup (Nginx, TLS, WebSocket Relay)</a></li>
+      <li><a href="#frontend">Deploy the Frontend UI</a></li>
+      <li><a href="#using">Using the System</a></li>
+      <li><a href="#contributing">Contributing</a></li>
+    </ol>
+  </div>
+</section>
+
+
+<!-- PARTS LIST -->
+<section id="parts">
+  <h2>1 — Parts &amp; Software You Need</h2>
+
+  <p>
+    The hardware listed below is what was used in this project. It is not the only combination that will work —
+    if you have experience with similar components, feel free to substitute where it makes sense.
+    The core requirements are: <strong>a microcontroller that can output step/direction pulses over a serial interface</strong>,
+    a compatible stepper driver, and a Linux-capable SBC (single-board computer) with network access to act as the bridge.
+    Specific substitution notes are included in each row.
+  </p>
+
+  <h3>Hardware</h3>
+  <table class="parts-table">
+    <thead>
+      <tr><th>Component (used in this project)</th><th>Notes &amp; Alternatives</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Arduino UNO R4 WiFi</td><td>Used here because it was on hand. The built-in LED matrix is a bonus — the sketch uses it for status display, but it is not essential to the control pipeline. Any Arduino (or compatible board) that can do USB serial at 115200 baud and output 5 V digital pulses will work; you would just need to remove the LED matrix code from the sketch.</td></tr>
+      <tr><td>CL57T Closed-Loop Stepper Driver</td><td>Used here because it matched the motor. Any stepper driver that accepts a standard PUL/DIR/ENA step-direction interface will work with this sketch. Open-loop drivers (e.g. A4988, DM542) are fine too — just omit the encoder cable.</td></tr>
+      <tr><td>NEMA 24 Closed-Loop Stepper Motor</td><td>Used here for its torque rating. Any stepper motor compatible with your chosen driver will work. NEMA 17 or 23 motors are common and cheaper alternatives. If using an open-loop driver, the encoder is simply unused.</td></tr>
+      <tr><td>Raspberry Pi 5</td><td>A Pi 5 connected over Wi-Fi was used in this project. Any Pi model with a USB-A port and network access will work (3B+/4/5). Ethernet works equally well as an alternative to Wi-Fi. Any Linux SBC (Orange Pi, Banana Pi, etc.) running Node.js is also a valid substitute — or even a Linux laptop if you want to test without dedicated hardware.</td></tr>
+      <tr><td>DC Power Supply for Driver</td><td>Voltage and current must match your specific driver and motor — check their datasheets. The CL57T accepts 24–80 V DC.</td></tr>
+      <tr><td>USB-C to USB-C cable</td><td>Used to connect the Arduino UNO R4 WiFi to the Raspberry Pi 5 — both use USB-C. If your board or SBC uses a different connector (e.g. USB-B on older Arduinos, USB-A on older Pis), use the cable that matches.</td></tr>
+      <tr><td>Jumper wires (male-to-male)</td><td>For the three low-voltage signal lines (PUL/DIR/ENA) from Arduino to driver.</td></tr>
+      <tr><td>VPS / cloud server</td><td>Any Linux VPS with a public IP. A domain name is not required — a bare IP address works fine. A domain was used here (twlg.net) purely for convenience. If you only need LAN control, a VPS is not required at all — the Pi's local server on port 3000 works standalone.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Software &amp; Accounts</h3>
+  <table class="parts-table">
+    <thead>
+      <tr><th>Software</th><th>Where to Get It</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Arduino IDE 2.x</td><td>arduino.cc/en/software</td></tr>
+      <tr><td>Arduino UNO R4 board package</td><td>Install via Arduino IDE Boards Manager ("Arduino UNO R4") — only needed if using the R4. Install the package matching your board otherwise.</td></tr>
+      <tr><td>Arduino_LED_Matrix library</td><td>Install via Arduino IDE Library Manager — only needed if using the UNO R4 WiFi with the LED matrix code intact. If you adapt the sketch for another board, this dependency can be removed.</td></tr>
+      <tr><td>Node.js (Raspberry Pi)</td><td>Installed via apt on the Pi (see Step 4)</td></tr>
+      <tr><td>Node.js (VPS)</td><td>Installed via apt or nvm on the VPS (see Step 5)</td></tr>
+      <tr><td>Nginx (VPS)</td><td>Installed via apt on the VPS</td></tr>
+      <tr><td>Certbot (VPS)</td><td>certbot.eff.org — used to obtain free TLS certificates via Let's Encrypt</td></tr>
+      <tr><td>This repository's code</td><td><a href="https://github.com/TWLG/Capstone" target="_blank" rel="noopener">github.com/TWLG/Capstone</a> — clone or download the project files</td></tr>
+    </tbody>
+  </table>
+</section>
+
+
+<!-- HARDWARE ASSEMBLY -->
+<section id="hardware">
+  <h2>2 — Hardware Assembly &amp; Wiring</h2>
+
+  <div class="danger">
+    <strong>&#9889; HIGH VOLTAGE WARNING</strong><br>
+    The CL57T stepper driver operates on 24–80 V DC. This voltage is incredibly dangerous, possibly lethal. 
+    <strong>Always power off and unplug the driver's power supply before making or changing any wiring connections.</strong>
+    Never touch motor phase terminals or power terminals while the supply is live. Strongly recommended to use smaller, hobbyist friendly parts if you are new to working with high voltages or want to safely experiment on a smaller scale.
+    <strong>Carelessness kills.</strong>
+  </div>
+
+  <h3>Wiring: Arduino → CL57T Driver (Signal Lines)</h3>
+  <p>
+    The Arduino sends three logic-level signals to the CL57T driver. These are low-voltage (5 V) connections and are
+    safe to wire while the Arduino is unpowered. Always complete signal wiring <em>before</em> applying motor supply power.
+  </p>
+
+  <table class="parts-table">
+    <thead>
+      <tr><th>Arduino Pin</th><th>CL57T Terminal</th><th>Signal</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Pin 8</td><td>PUL+</td><td>Step pulse</td></tr>
+      <tr><td>Pin 9</td><td>DIR+</td><td>Direction</td></tr>
+      <tr><td>Pin 10</td><td>ENA+</td><td>Enable (active-LOW)</td></tr>
+      <tr><td>GND</td><td>PUL− / DIR− / ENA− (common)</td><td>Signal ground</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warning">
+    <strong>&#9888; Active-LOW Enable</strong><br>
+    The ENA pin on the CL57T is <em>active-LOW</em>: pulling it LOW enables the driver; HIGH disables it.
+    The Arduino sketch handles this correctly — do not invert it externally.
+  </div>
+
+  <div class="diagram">
+    <img src="images/driver_to_arduino_connection_diagram.png" alt="Wiring diagram: Arduino to CL57T driver" />
+    <p class="caption">Figure 2 — Arduino pins 8 / 9 / 10 to CL57T PUL+ / DIR+ / ENA+ with shared GND</p>
+  </div>
+
+  <h3>Wiring: CL57T Driver → NEMA 24 Motor</h3>
+  <p>
+    The motor connects to the CL57T via two separate cables: four <strong>phase wires</strong> (motor coils) and a
+    six-wire <strong>encoder cable</strong>. The tables below show the most common wire color conventions used
+    by NEMA closed-loop stepper manufacturers (STEPPERONLINE, RTELLIGENT, Leadshine, and most generic Chinese motors).
+    <strong>Always verify against the datasheet or wiring diagram that shipped with your specific motor</strong> —
+    colors can differ between manufacturers and even between production batches of the same model.
+  </p>
+  <p>
+    You will notice that some colors appear in both the phase and encoder tables (for example, red and green each show
+    up in both). This is not a problem — the two cables are physically separate and terminate on completely different
+    sets of driver terminals, so there is no ambiguity in practice. Treat each cable as its own independent group
+    and wire them one at a time.
+  </p>
+
+  <h4>Motor Phase Wires (A+, A−, B+, B−)</h4>
+  <table class="parts-table">
+    <thead>
+      <tr><th>CL57T Terminal</th><th>Typical Wire Color</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>A+</td><td>Red</td><td rowspan="2">One coil pair — swapping A+ and A− only reverses direction</td></tr>
+      <tr><td>A−</td><td>Blue</td></tr>
+      <tr><td>B+</td><td>Green</td><td rowspan="2">Other coil pair — same rule applies</td></tr>
+      <tr><td>B−</td><td>Black</td></tr>
+    </tbody>
+  </table>
+  <p><small>If the motor runs in the wrong direction, swap A+ and A− (or reverse direction in the UI or code instead).</small></p>
+
+  <h4>Encoder Cable (EA+, EA−, EB+, EB−, VCC, EGND)</h4>
+  <table class="parts-table">
+    <thead>
+      <tr><th>CL57T Terminal</th><th>Typical Wire Color</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>VCC</td><td>Red</td><td>Encoder power (5 V from driver)</td></tr>
+      <tr><td>EGND</td><td>White</td><td>Encoder ground</td></tr>
+      <tr><td>EA+</td><td>Black</td><td>Encoder channel A+</td></tr>
+      <tr><td>EA−</td><td>Blue</td><td>Encoder channel A−</td></tr>
+      <tr><td>EB+</td><td>Yellow</td><td>Encoder channel B+</td></tr>
+      <tr><td>EB−</td><td>Green</td><td>Encoder channel B−</td></tr>
+      <tr><td>Shield/drain</td><td>Bare wire</td><td>Leave unconnected or tie to chassis ground — do not terminate to any signal terminal</td></tr>
+    </tbody>
+  </table>
+
+  <div class="danger">
+    <strong>&#9889; VCC and EGND Must Be Correct</strong><br>
+    Reversing the encoder power (VCC/EGND) will immediately damage the encoder. Double-check these two wires
+    against your motor's datasheet before applying power. Swapping EA/EB or their polarities will cause a driver
+    fault alarm but will not cause permanent damage.
+  </div>
+
+  <h4>Power Supply → CL57T (+VDC, GND)</h4>
+  <p>Connect your DC power supply to the CL57T's power input terminals. The cables used in this project are:
+  <strong>black for +VDC</strong> and <strong>green for GND</strong>.</p>
+
+  <div class="danger">
+    <strong>&#9889; Non-Standard Power Cable Colors</strong><br>
+    The power cables used here do <em>not</em> follow the conventional red = positive / black = negative color code.
+    <strong>Black is +VDC and green is GND in this build.</strong> If you are wiring your own supply,
+    use whatever cables you have — but label them clearly and verify polarity with a multimeter before connecting
+    to the driver. Reversing polarity on the power input will damage or destroy the CL57T instantly.
+  </div>
+
+  <div class="diagram">
+    <img src="images/motor_to_driver.jpg" alt="Motor phase and encoder wiring to CL57T driver" />
+    <p class="caption">Figure 3 — Motor phase wires and encoder cable connected to CL57T driver terminals</p>
+  </div>
+
+  <div class="danger">
+    <strong>&#9889; Motor Phase Wires Carry High Current</strong><br>
+    Use appropriately rated wire for the motor power lines. Never short the motor terminals together
+    while the driver is powered — this can damage the driver instantly. Keep motor power wires physically
+    separated from signal wires (PUL/DIR/ENA) to avoid noise-induced false steps.
+  </div>
+
+  <h3>CL57T DIP Switch Settings</h3>
+  <p>
+    The CL57T's DIP switches set the signal input voltage mode, microstep resolution, and peak current.
+    The configuration used in this project is:
+  </p>
+
+  <table class="parts-table">
+    <thead>
+      <tr><th>Setting</th><th>Value Used</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Signal voltage mode</td><td>5 V</td><td>Matches the Arduino UNO R4's 5 V logic output. If your board outputs 3.3 V, switch to the appropriate mode.</td></tr>
+      <tr><td>SW1</td><td>DOWN (OFF)</td><td rowspan="3">SW1–SW3 all OFF = 400 pulses/revolution. Adjust the pulse interval in the UI to match your chosen resolution.</td></tr>
+      <tr><td>SW2</td><td>DOWN (OFF)</td></tr>
+      <tr><td>SW3</td><td>DOWN (OFF)</td></tr>
+      <tr><td>SW4–SW6</td><td>Set per motor</td><td>Peak current — refer to the CL57T manual and your motor's rated current. Do not exceed the motor's specification.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="tip">
+    <strong>&#128161; 5 V mode is required for direct Arduino connection</strong><br>
+    The Arduino UNO R4 outputs 5 V logic on its digital pins. Setting the CL57T to 5 V signal mode ensures
+    the driver correctly interprets those pulses. At 24 V mode the Arduino signal level would be too low
+    to reliably trigger the optocouplers inside the driver.
+  </div>
+
+  <div class="tip">
+    <strong>&#128161; 400 pulses/rev at SW1–3 all OFF</strong><br>
+    At this setting a full motor revolution requires 400 pulses from the Arduino.
+    If you use a different microstep setting, the motor will move more or fewer degrees per pulse —
+    compensate by adjusting the pulse interval in the UI rather than changing the sketch.
+    Refer to the CL57T manual's switch table for all resolution options.
+  </div>
+
+  <div class="warning">
+    <strong>&#9888; Set DIP Switches While Powered Off</strong><br>
+    Always change DIP switch settings with the driver's power supply disconnected.
+  </div>
+
+  <h3>Connecting Arduino to Raspberry Pi</h3>
+  <p>
+    Use a USB-C to USB-C cable to connect the Arduino UNO R4 WiFi to the Raspberry Pi 5 — both devices use USB-C. The Pi will appear
+    to the Arduino as a serial host. On the Pi, the Arduino typically enumerates as <code>/dev/ttyACM0</code>
+    (confirm with <code>ls /dev/ttyACM*</code> after plugging in).
+  </p>
+  <div class="warning">
+    <strong>&#9888; Do not wire the Pi GPIO directly to the CL57T</strong><br>
+    The Raspberry Pi's GPIO pins output <strong>3.3 V</strong> logic. The CL57T in 5 V signal mode requires
+    5 V logic levels to reliably trigger its optocoupler inputs. Connecting the Pi GPIO directly would result
+    in unreliable or no response from the driver. A level shifter would be required to do this correctly —
+    which is exactly why the Arduino sits between them.
+  </div>
+
+  <div class="diagram">
+    <img src="images/hardware_photo.png" alt="Full assembled hardware photo" />
+    <p class="caption">Figure 4 — Assembled hardware: Arduino, CL57T driver, and NEMA 24 motor</p>
+  </div>
+
+  <div class="tip">
+    <strong>&#128161; Tip: Power sequencing</strong><br>
+    Power on the Arduino and Raspberry Pi first, start the software, then power on the motor supply.
+    This ensures the Arduino has initialized and is actively controlling the ENA pin before the driver goes live.
+  </div>
+</section>
+
+
+<!-- ARDUINO SETUP -->
+<section id="arduino">
+  <h2>3 — Arduino Setup</h2>
+
+  <h3><span class="step-number">1</span> Install the Arduino IDE and Board Package</h3>
+  <p>Download and install the Arduino IDE 2.x. Open it, go to <strong>Tools → Board → Boards Manager</strong>
+  and install the package for your board. If using the UNO R4 WiFi, search for "Arduino UNO R4".</p>
+
+  <h3><span class="step-number">2</span> Install the LED Matrix Library (UNO R4 WiFi only)</h3>
+  <p>Go to <strong>Tools → Manage Libraries</strong>, search for <code>Arduino_LED_Matrix</code>, and install it.
+  This library powers the built-in LED matrix on the UNO R4 WiFi, which the sketch uses to show motor state at a glance
+  (enabled/disabled, direction, speed). It is a nice addition but <strong>not essential to the control pipeline</strong> —
+  if you are using a different Arduino board, you can remove all LED matrix code from the sketch
+  (<code>#include "Arduino_LED_Matrix.h"</code>, the <code>matrix</code> object, and all <code>updateMatrixFromState()</code> calls)
+  and the rest of the sketch will work unchanged.</p>
+
+  <h3><span class="step-number">3</span> Open and Configure the Sketch</h3>
+  <p>Open <code>a_DRIVER/a_DRIVER.ino</code> from this repository. No WiFi credentials are needed —
+  the Arduino communicates only over USB serial regardless of board. The pin assignments at the top of the sketch
+  can be changed to match whatever pins you use on your board.</p>
+  <div class="tip">
+    <strong>&#128161; Why USB serial and not WiFi?</strong><br>
+    The Arduino UNO R4 is single-core. When tested with a network or WebSocket connection, it could not reliably
+    maintain the microsecond-level pulse timing the stepper driver requires at the same time. Offloading all
+    networking to the Pi over USB serial gives the Arduino a single, uninterrupted job: pulse the motor precisely.
+  </div>
+
+  <pre><code>// Pin assignments — top of a_DRIVER.ino
+const int stepPin      = 8;   // → CL57T PUL+
+const int directionPin = 9;   // → CL57T DIR+
+const int enaPin       = 10;  // → CL57T ENA+</code></pre>
+
+  <h3><span class="step-number">4</span> Upload the Sketch</h3>
+  <p>Connect the Arduino to your computer via USB. Select <strong>Tools → Board → Arduino UNO R4 WiFi</strong>
+  and the correct port. Click <strong>Upload</strong>.</p>
+
+  <div class="warning">
+    <strong>&#9888; Startup Self-Test</strong><br>
+    On power-up, the sketch runs a self-test: it enables the driver for 2 seconds, disables it for 2 seconds,
+    then spins the motor CW for 2 s and CCW for 2 s. Make sure the motor is free to spin and nothing is
+    mechanically attached during first upload.
+  </div>
+
+  <h3><span class="step-number">5</span> Verify via Serial Monitor</h3>
+  <p>Open <strong>Tools → Serial Monitor</strong> at baud <code>115200</code>. You should see the self-test messages,
+  ending with:</p>
+  <pre><code>Startup tests complete. Ready for USB commands.</code></pre>
+  <p>You can test commands manually here before wiring up the Pi:</p>
+  <pre><code>START 800      ← start motor at 800 µs interval (~1250 steps/sec)
+STOP           ← stop motor
+DIR 0          ← set direction CCW
+DIR 1          ← set direction CW
+ENA 0          ← disable driver
+ENA 1          ← enable driver
+SET_SPEED 400  ← change speed to 400 µs (~2500 steps/sec)</code></pre>
+
+  <div class="tip">
+    <strong>&#128161; Speed Reference</strong><br>
+    Pulse interval range is 200–4000 µs. Lower = faster.
+    Steps per second ≈ 1,000,000 ÷ interval(µs).
+    At 800 µs → ~1,250 steps/sec. At 200 µs → ~5,000 steps/sec.
+  </div>
+</section>
+
+
+<!-- RASPBERRY PI SETUP -->
+<section id="pi">
+  <h2>4 — Raspberry Pi Setup</h2>
+
+  <p>A Raspberry Pi 5 connected over Wi-Fi was used in this project. The Pi runs <code>pi_controller.js</code> — a Node.js bridge
+  that sits between the Arduino (USB serial) and the VPS (WebSocket). It also hosts a local control UI on port 3000.
+  Ethernet works as a drop-in alternative to Wi-Fi. The steps below apply to any Pi model or Debian-based Linux SBC.</p>
+
+  <h3><span class="step-number">1</span> Install Node.js and Dependencies</h3>
+  <p>SSH into your Pi and run:</p>
+  <pre><code>sudo apt update
+sudo apt-get install -y nodejs npm
+</code></pre>
+  <p>Then navigate to the project directory and install the required packages:</p>
+  <pre><code>cd /path/to/Capstone
+npm install ws serialport express</code></pre>
+
+  <h3><span class="step-number">2</span> Find the Arduino's Serial Port</h3>
+  <p>Plug the Arduino into the Pi via USB, then run:</p>
+  <pre><code>ls /dev/ttyACM*</code></pre>
+  <p>It will typically appear as <code>/dev/ttyACM0</code>. If it shows a different number, note it for the next step.</p>
+
+  <h3><span class="step-number">3</span> Edit pi_controller.js</h3>
+  <p>Open <code>pi_controller.js</code> and update the two constants at the top:</p>
+  <pre><code>const DEVICE_ID   = "pi-motor-1";                          // must match what you use in the UI
+const VPS_WS_URL  = "wss://your-domain.com/ws/?role=device&amp;deviceId=" + DEVICE_ID;
+const SERIAL_PORT = "/dev/ttyACM0";                        // adjust if different</code></pre>
+
+  <div class="tip">
+    <strong>&#128161; DEVICE_ID</strong><br>
+    The Device ID must match exactly across the Pi, the VPS server, and the browser UI field.
+    The default is <code>pi-motor-1</code> — you can leave it as-is if you only have one device.
+  </div>
+
+  <h3><span class="step-number">4</span> Start the Bridge</h3>
+  <pre><code>node pi_controller.js</code></pre>
+  <p>You should see:</p>
+  <pre><code>Connecting to VPS: wss://your-domain.com/ws/?role=device&amp;deviceId=pi-motor-1
+Local control UI at http://localhost:3000</code></pre>
+  <p>Once the VPS relay is running (Step 5), the Pi will also print <code>Connected to VPS</code>.</p>
+
+  <h3>Local UI (Optional)</h3>
+  <p>While on the same network as the Pi, you can open <code>http://&lt;pi-ip&gt;:3000</code> in a browser
+  to control the motor directly without going through the VPS. This is useful for testing before VPS setup is complete.</p>
+
+  <div class="warning">
+    <strong>&#9888; Running as a Service</strong><br>
+    For persistent operation, run <code>pi_controller.js</code> as a systemd service so it restarts automatically
+    on reboot or crash. A basic unit file would use <code>ExecStart=/usr/bin/node /path/to/pi_controller.js</code>
+    with <code>Restart=always</code>.
+  </div>
+</section>
+
+
+<!-- VPS SETUP -->
+<section id="vps">
+  <h2>5 — VPS Setup (Nginx, TLS, WebSocket Relay)</h2>
+
+  <p>The VPS hosts the WebSocket relay (<code>server.js</code>) and the frontend UI (<code>motor.html</code>).
+  Nginx acts as a reverse proxy, handles TLS termination, and enforces HTTPS.</p>
+
+  <h3><span class="step-number">1</span> Install Nginx and Node.js on the VPS</h3>
+  <pre><code>sudo apt update
+sudo apt install -y nginx nodejs npm</code></pre>
+
+  <h3><span class="step-number">2</span> Install the WebSocket Relay Dependencies</h3>
+  <p>Copy <code>server.js</code> to your VPS (e.g., <code>/opt/motor/server.js</code>), then:</p>
+  <pre><code>cd /opt/motor
+npm install ws</code></pre>
+
+  <h3><span class="step-number">3</span> Obtain a TLS Certificate with Certbot</h3>
+  <p>
+    A domain name was used here for convenience, but it is not strictly required.
+    Certbot and Let's Encrypt do require a domain pointed at your VPS IP — if you have one, this is the easiest path:
+  </p>
+  <pre><code>sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com</code></pre>
+  <p>Certbot will modify your Nginx config automatically. The certificate auto-renews via a systemd timer or cron job.</p>
+
+  <div class="tip">
+    <strong>&#128161; No domain? You have options</strong><br>
+    If you are using a bare IP address, Certbot will not work. Alternatives:
+    <ul>
+      <li><strong>Self-signed certificate</strong> — browsers will show a security warning, but the connection is still encrypted. You can add a permanent exception.</li>
+      <li><strong>Skip TLS entirely</strong> — serve <code>motor.html</code> over plain HTTP and use <code>ws://</code> instead of <code>wss://</code>. Fine for a trusted private network; not recommended over the public internet.</li>
+      <li><strong>Free subdomain services</strong> — services like DuckDNS give you a free domain pointing to your IP, which Certbot can then use.</li>
+    </ul>
+  </div>
+
+  <div class="tip">
+    <strong>&#128161; DNS propagation</strong><br>
+    DNS changes can take minutes to hours to propagate. If Certbot fails with a challenge error, wait and retry.
+  </div>
+
+  <h3><span class="step-number">4</span> Configure Nginx</h3>
+  <p>Copy <code>nginx_config.txt</code> to <code>/etc/nginx/sites-available/motor.conf</code> and update
+  <code>server_name</code> to your domain. Enable the site and reload:</p>
+  <pre><code>sudo ln -s /etc/nginx/sites-available/motor.conf /etc/nginx/sites-enabled/
+sudo nginx -t          # test config — must say "ok"
+sudo systemctl reload nginx</code></pre>
+
+  <p>Key sections of the Nginx config:</p>
+  <pre><code># Proxy WebSocket traffic to the Node relay
+location /ws/ {
+    proxy_pass http://127.0.0.1:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+}
+
+# Protect the motor control UI with a password
+location = /motor.html {
+    auth_basic "Restricted";
+    auth_basic_user_file /etc/nginx/.motor_passwd;
+    root /var/www/html;
+}</code></pre>
+
+  <h3><span class="step-number">5</span> Create the Basic Auth Password (Optional but Recommended)</h3>
+  <p>The Nginx config protects <code>/motor.html</code> with HTTP basic authentication.
+  Create the password file:</p>
+  <pre><code>sudo apt install -y apache2-utils
+sudo htpasswd -c /etc/nginx/.motor_passwd your-username</code></pre>
+  <p>You will be prompted to enter and confirm a password. Reload Nginx after.</p>
+
+  <div class="tip">
+    <strong>&#128161; Why password-protect it?</strong><br>
+    Without auth, anyone who knows your URL can send motor commands. Since this controls physical hardware,
+    restricting access is strongly recommended.
+  </div>
+
+  <h3><span class="step-number">6</span> Start the WebSocket Relay</h3>
+  <pre><code>node /opt/motor/server.js</code></pre>
+  <p>You should see:</p>
+  <pre><code>WebSocket server listening on 127.0.0.1:4000</code></pre>
+
+  <p>
+    Once running, <code>server.js</code> operates independently of the Pi and the browser.
+    Devices and UIs connect and disconnect asynchronously — the relay just routes messages between them.
+    This makes it easy to scale: add more Raspberry Pis by running <code>pi_controller.js</code> on each
+    with a unique <code>DEVICE_ID</code>, and the relay will track them all simultaneously without any
+    changes to the VPS.
+  </p>
+
+  <div class="tip">
+    <strong>&#128161; One-to-Many</strong><br>
+    Any number of browser UIs can be connected to the relay at the same time. Each UI targets a specific
+    device by its ID, so multiple operators can watch or control different motors independently — or multiple
+    viewers can monitor the same motor's state in real time.
+  </div>
+
+  <div class="warning">
+    <strong>&#9888; Run as a Service</strong><br>
+    Run <code>server.js</code> as a systemd service so it starts on boot and stays running permanently.
+    The relay must be up before any Pi or browser client can connect.
+  </div>
+</section>
+
+
+<!-- FRONTEND DEPLOY -->
+<section id="frontend">
+  <h2>6 — Deploy the Frontend UI</h2>
+
+  <p>Copy <code>motor.html</code> from the repository to your VPS web root:</p>
+  <pre><code>sudo cp motor.html /var/www/html/motor.html</code></pre>
+
+  <p>The file is self-contained — no build step needed. It connects to the WebSocket relay at
+  <code>wss://your-domain.com/ws/</code> automatically using the page's own hostname.</p>
+
+  <p>Access it in a browser at: <code>https://your-domain.com/motor.html</code></p>
+  <p>You will be prompted for the basic auth username and password you created in Step 5.</p>
+
+  <div class="tip">
+    <strong>&#128161; No HTTPS = No WSS</strong><br>
+    Modern browsers block <code>wss://</code> (secure WebSocket) connections from plain <code>http://</code> pages.
+    If you are not using TLS, serve <code>motor.html</code> over HTTP and the page will automatically use <code>ws://</code>
+    instead — the script detects the protocol from the page's own URL. A domain name is not required either way;
+    a bare IP works fine in both cases.
+  </div>
+</section>
+
+
+<!-- USING THE SYSTEM -->
+<section id="using">
+  <h2>7 — Using the System</h2>
+
+  <h3>Startup Order</h3>
+  <ol>
+    <li>Power on the Raspberry Pi. Start <code>pi_controller.js</code>.</li>
+    <li>Ensure <code>server.js</code> is running on the VPS.</li>
+    <li>Power on the Arduino (USB from Pi is sufficient).</li>
+    <li>Power on the motor driver's DC supply last.</li>
+    <li>Open <code>https://your-domain.com/motor.html</code> in a browser.</li>
+  </ol>
+
+  <h3>The Browser UI</h3>
+  <p>The UI connects to the relay automatically on page load. The status dot in the header shows:</p>
+  <ul>
+    <li><strong>Green</strong> — WebSocket connected to VPS</li>
+    <li><strong>Orange</strong> — Connecting</li>
+    <li><strong>Red</strong> — Disconnected (check that server.js is running)</li>
+  </ul>
+
+  <h3>Controls</h3>
+  <table class="parts-table">
+    <thead>
+      <tr><th>Control</th><th>What it Does</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Pulse interval (µs)</td><td>Sets motor speed. Range: 200–4000 µs. Lower = faster. Default: 800 µs (~1,250 steps/sec)</td></tr>
+      <tr><td>Set speed</td><td>Sends the interval value to update speed while the motor is running</td></tr>
+      <tr><td>Start</td><td>Enables the driver and begins stepping at the current interval</td></tr>
+      <tr><td>Stop</td><td>Stops stepping and disables the driver</td></tr>
+      <tr><td>Power ON / OFF</td><td>Enables or disables the CL57T driver independently (motor stays stopped)</td></tr>
+      <tr><td>CW / CCW</td><td>Sets rotation direction</td></tr>
+      <tr><td>Device ID field</td><td>Must match the <code>DEVICE_ID</code> in <code>pi_controller.js</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>Shutdown Order</h3>
+  <ol>
+    <li>Click <strong>Stop</strong> in the UI to disable the driver before cutting power.</li>
+    <li>Power off the motor driver's DC supply.</li>
+    <li>Stop the Pi bridge.</li>
+    <li>Stop the VPS relay process. (Optional)</li>
+  </ol>
+
+  <div class="danger">
+    <strong>&#9889; Do Not Cut Motor Power While Running</strong><br>
+    Cutting the DC supply while the motor is actively stepping can cause voltage spikes that damage the driver.
+    Always click Stop first, confirm the motor has halted, then remove power.
+  </div>
+</section>
+
+
+<!-- CONTRIBUTING -->
+<section id="contributing">
+  <h2>Contributing</h2>
+  <p>
+    All source code and documentation for this project is publicly available on GitHub.
+    If you spot an error, have an improvement, or want to share a build variation,
+    pull requests are welcome.
+  </p>
+  <p>
+    <strong>Repository:</strong>
+    <a href="https://github.com/TWLG/Capstone" target="_blank" rel="noopener">github.com/TWLG/Capstone</a>
+  </p>
+  <pre><code># Clone the repo
+git clone https://github.com/TWLG/Capstone.git</code></pre>
+</section>
 
 </main>
+
+<footer>
+  <p>TWLG.net Capstone Project — Remote Stepper Motor Control via WebSockets &mdash;
+  <a href="https://github.com/TWLG/Capstone" target="_blank" rel="noopener">github.com/TWLG/Capstone</a></p>
+</footer>
+
 </body>
 </html>

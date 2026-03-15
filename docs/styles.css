@@ -1,29 +1,36 @@
+/* GLOBAL RESET */
+
 * {
+    box-sizing: border-box;
     margin: 0;
     padding: 0;
-    box-sizing: border-box;
 }
 
 body {
-    font-family: Arial, sans-serif;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #fafafa;
+    color: #222;
     line-height: 1.6;
-    background: #f4f4f4;
-    color: #333;
 }
 
+
+/* HEADER */
+
 header {
-    background: #222;
+    background: #1f2933;
     color: white;
-    padding: 1rem;
+    padding: 18px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 header h1 {
-    margin-bottom: 0.5rem;
+    font-size: 1.4rem;
 }
 
 nav a {
-    color: white;
-    margin-right: 1rem;
+    color: #ddd;
     text-decoration: none;
 }
 
@@ -31,39 +38,112 @@ nav a:hover {
     text-decoration: underline;
 }
 
+
+/* MAIN LAYOUT */
+
+main {
+    max-width: 900px;
+    margin: auto;
+    padding: 40px 20px;
+}
+
+
+/* INTRO SECTION (ONLY COSMETIC ONE) */
+
 .hero {
-    padding: 4rem 2rem;
     text-align: center;
-    background: white;
+    margin-bottom: 60px;
 }
 
-.hero button {
-    margin-top: 1rem;
-    padding: 0.7rem 1.2rem;
-    border: none;
-    background: #0077ff;
-    color: white;
-    cursor: pointer;
+.hero h2 {
+    font-size: 2rem;
+    margin-bottom: 10px;
 }
 
-.content {
-    display: flex;
-    gap: 1rem;
-    padding: 2rem;
-    flex-wrap: wrap;
+.hero p {
+    max-width: 650px;
+    margin: auto;
 }
 
-.card {
-    flex: 1;
-    min-width: 200px;
-    background: white;
-    padding: 1.5rem;
-    border-radius: 6px;
+
+/* GENERAL SECTIONS */
+
+section {
+    margin-bottom: 50px;
 }
+
+section h2 {
+    font-size: 1.6rem;
+    margin-bottom: 12px;
+    border-bottom: 2px solid #e5e5e5;
+    padding-bottom: 6px;
+}
+
+section h3 {
+    margin-top: 20px;
+    margin-bottom: 8px;
+}
+
+
+/* TEXT */
+
+p {
+    margin-bottom: 12px;
+}
+
+
+/* DIAGRAMS */
+
+.diagram {
+    margin-top: 15px;
+    text-align: center;
+}
+
+.diagram img {
+    max-width: 100%;
+    border: 1px solid #ddd;
+}
+
+.caption {
+    font-size: 0.9rem;
+    color: #666;
+    margin-top: 5px;
+}
+
+
+/* CODE BLOCKS (IMPORTANT FOR TUTORIALS) */
+
+pre {
+    background: #1f2933;
+    color: #e6edf3;
+    padding: 14px;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin-top: 10px;
+}
+
+code {
+    font-family: monospace;
+}
+
+
+/* LISTS */
+
+ul {
+    padding-left: 20px;
+}
+
+li {
+    margin-bottom: 6px;
+}
+
+
+/* FOOTER */
 
 footer {
     text-align: center;
-    padding: 1rem;
-    background: #222;
-    color: white;
+    padding: 25px;
+    margin-top: 60px;
+    border-top: 1px solid #ddd;
+    color: #666;
 }
