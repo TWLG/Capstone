@@ -181,9 +181,11 @@
       <li><a href="#pi">Raspberry Pi Setup</a></li>
       <li><a href="#vps">Server Setup (Nginx, TLS, WebSocket Relay)</a></li>
       <li><a href="#frontend">Deploy the Frontend UI</a></li>
+      <li><a href="#wireguard">WireGuard VPN (Optional)</a></li>
       <li><a href="#using">Using the System</a></li>
       <li><a href="#future">Future Improvements</a></li>
       <li><a href="#contributing">Contributing</a></li>
+
     </ol>
   </div>
 </section>
@@ -671,9 +673,161 @@ sudo htpasswd -c /etc/nginx/.motor_passwd your-username</code></pre>
 </section>
 
 
+<!-- WIREGUARD (OPTIONAL) -->
+<section id="wireguard">
+  <h2>7, WireGuard VPN <span style="font-size:0.75em; font-weight:normal; color:#555;">(Optional)</span></h2>
+
+  <p>
+    WireGuard is a modern VPN protocol built into the Linux kernel. It creates an encrypted, authenticated
+    tunnel between machines using public/private key pairs. Configuration is minimal compared to older
+    VPN tools, and it has a strong security track record.
+  </p>
+  <p>
+    In this setup, <strong>three machines</strong> join the VPN: the VPS (server), the Raspberry Pi (device),
+    and your computer (browser). Nginx is then configured to block all access to <code>motor.html</code>
+    and the WebSocket endpoint from any IP outside the VPN subnet. This means the relay, the frontend,
+    and all motor commands are completely unreachable from the public internet. Only a machine holding a
+    valid WireGuard key can reach any part of the system.
+  </p>
+
+  <div class="tip">
+    <strong>&#128161; When is this worth doing?</strong><br>
+    If your Pi is running unattended or the project controls hardware with any real-world consequences,
+    WireGuard is a low-effort way to meaningfully reduce the attack surface. If you are only testing
+    on a local network, it is not necessary.
+  </div>
+
+  <h3><span class="step-number">1</span> Install WireGuard</h3>
+  <p>On the <strong>VPS and Raspberry Pi</strong> (Linux):</p>
+  <pre><code>sudo apt update
+sudo apt install -y wireguard</code></pre>
+  <p>On your <strong>computer</strong>, download and install the official WireGuard client from
+  <code>wireguard.com/install</code>. It is available for Windows, macOS, and Linux.</p>
+
+  <h3><span class="step-number">2</span> Generate Key Pairs</h3>
+  <p>Run this on <strong>each machine separately</strong> (VPS, Pi, and your computer on Linux/macOS;
+  the Windows GUI app has a built-in key generator). Keep the private key on the machine that generated it.</p>
+  <pre><code>wg genkey | tee privatekey | wg pubkey > publickey
+cat privatekey   # keep this secret, stays on this machine
+cat publickey    # share this with the VPS config</code></pre>
+
+  <h3><span class="step-number">3</span> Configure the VPS (Server)</h3>
+  <p>Create <code>/etc/wireguard/wg0.conf</code> on the VPS. It needs a <code>[Peer]</code> block for
+  each client — the Pi and your computer:</p>
+  <pre><code>[Interface]
+Address    = 10.0.0.1/24
+ListenPort = 51820
+PrivateKey = &lt;VPS_PRIVATE_KEY&gt;
+
+[Peer]
+# Raspberry Pi
+PublicKey  = &lt;PI_PUBLIC_KEY&gt;
+AllowedIPs = 10.0.0.2/32
+
+[Peer]
+# Your computer (browser)
+PublicKey  = &lt;COMPUTER_PUBLIC_KEY&gt;
+AllowedIPs = 10.0.0.3/32</code></pre>
+  <p>Add another <code>[Peer]</code> block for every additional computer that needs access.</p>
+
+  <h3><span class="step-number">4</span> Configure the Raspberry Pi</h3>
+  <p>Create <code>/etc/wireguard/wg0.conf</code> on the Pi:</p>
+  <pre><code>[Interface]
+Address    = 10.0.0.2/24
+PrivateKey = &lt;PI_PRIVATE_KEY&gt;
+
+[Peer]
+# VPS
+PublicKey  = &lt;VPS_PUBLIC_KEY&gt;
+Endpoint   = your-domain.com:51820
+AllowedIPs = 10.0.0.1/32
+PersistentKeepalive = 25</code></pre>
+
+  <div class="tip">
+    <strong>&#128161; PersistentKeepalive</strong><br>
+    The Pi is behind a NAT router. <code>PersistentKeepalive = 25</code> sends a keepalive packet every
+    25 seconds to keep the NAT mapping alive so the VPS can reach the Pi reliably.
+  </div>
+
+  <h3><span class="step-number">5</span> Configure Your Computer (Browser Client)</h3>
+  <p>
+    On Windows or macOS, open the WireGuard app, click <strong>Add Tunnel → Create from scratch</strong>,
+    and paste this config (the app generates the key pair for you — copy the public key into the VPS
+    <code>[Peer]</code> block above):
+  </p>
+  <pre><code>[Interface]
+Address    = 10.0.0.3/24
+PrivateKey = &lt;COMPUTER_PRIVATE_KEY&gt;
+
+[Peer]
+# VPS
+PublicKey  = &lt;VPS_PUBLIC_KEY&gt;
+Endpoint   = your-domain.com:51820
+AllowedIPs = 10.0.0.0/24</code></pre>
+
+  <div class="tip">
+    <strong>&#128161; Split tunnel</strong><br>
+    <code>AllowedIPs = 10.0.0.0/24</code> is a split-tunnel configuration: only traffic destined for the
+    10.0.0.x VPN subnet routes through the tunnel. Your regular internet traffic is unaffected.
+  </div>
+
+  <h3><span class="step-number">6</span> Start WireGuard</h3>
+  <p>On the VPS and Pi:</p>
+  <pre><code>sudo systemctl enable --now wg-quick@wg0</code></pre>
+  <p>On your computer, click <strong>Activate</strong> in the WireGuard app.</p>
+  <p>Verify peers are connected on the VPS:</p>
+  <pre><code>sudo wg show</code></pre>
+  <p>From the Pi and from your computer, confirm you can reach the VPS tunnel address:</p>
+  <pre><code>ping 10.0.0.1</code></pre>
+
+  <div class="warning">
+    <strong>&#9888; Open UDP Port 51820</strong><br>
+    WireGuard uses UDP. Make sure your VPS firewall allows inbound UDP on port 51820:
+    <pre><code>sudo ufw allow 51820/udp</code></pre>
+  </div>
+
+  <h3><span class="step-number">7</span> Lock Everything to the VPN</h3>
+  <p>
+    With all three peers connected, restrict Nginx so that <code>motor.html</code> and the WebSocket
+    endpoint only respond to requests from the VPN subnet. Update the relevant locations in your Nginx
+    config (from Step 5):
+  </p>
+  <pre><code>location /ws/ {
+    allow 10.0.0.0/24;
+    deny all;
+    proxy_pass http://127.0.0.1:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "Upgrade";
+}
+
+location = /motor.html {
+    allow 10.0.0.0/24;
+    deny all;
+    root /var/www/html;
+}</code></pre>
+  <p>Reload Nginx to apply:</p>
+  <pre><code>sudo nginx -t &amp;&amp; sudo systemctl reload nginx</code></pre>
+  <p>
+    After this, navigating to <code>https://your-domain.com/motor.html</code> from a machine that is
+    not on the VPN will return a 403. The page and the WebSocket relay are only reachable with the
+    tunnel active. You can remove the basic auth password set in Step 5 if you prefer, since VPN
+    membership now controls access entirely.
+  </p>
+  <p>
+    Optionally, also bind <code>server.js</code> to the WireGuard interface so the relay itself is
+    not even reachable on localhost without the VPN:
+  </p>
+  <pre><code>// server.js — bind to the WireGuard interface
+server.listen(4000, '127.0.0.1');   // leave as-is, Nginx handles the VPN restriction
+// — or, to bind directly to the tunnel address:
+server.listen(4000, '10.0.0.1');    // then update the proxy_pass above to match</code></pre>
+</section>
+
+
 <!-- USING THE SYSTEM -->
 <section id="using">
-  <h2>7, Using the System</h2>
+  <h2>8, Using the System</h2>
 
   <h3>Startup Order</h3>
   <ol>
@@ -741,7 +895,7 @@ sudo htpasswd -c /etc/nginx/.motor_passwd your-username</code></pre>
 
 <!-- FUTURE WORK -->
 <section id="future">
-  <h2>Future Improvements</h2>
+  <h2>9, Future Improvements</h2>
   <p>
     The current system is a working proof of concept. If the project grows, here are natural areas to build on:
   </p>
